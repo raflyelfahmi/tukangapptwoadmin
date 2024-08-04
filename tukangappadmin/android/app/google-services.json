@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "505748995222",
+    "firebase_url": "https://tukangapp-876e2-default-rtdb.firebaseio.com",
+    "project_id": "tukangapp-876e2",
+    "storage_bucket": "tukangapp-876e2.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:505748995222:android:c4079f4442bec3804696b7",
+        "android_client_info": {
+          "package_name": "com.tukangapptwo.tukangapptwo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDtwgez8w-uw2MSO0pnXwCxReesNVy_Xnc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
