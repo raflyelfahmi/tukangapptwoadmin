@@ -1,5 +1,6 @@
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:tukangappadmin/detilsedangproses.dart';
 import 'package:tukangappadmin/navbar.dart';
 
 class SedangDiprosesPage extends StatefulWidget {
@@ -68,18 +69,6 @@ class _SedangDiprosesPageState extends State<SedangDiprosesPage> {
     });
   }
 
-  void _updateOrderStatus(String orderId) {
-    _ordersReference.child(orderId).update({'status': 'selesai'}).then((_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Status pesanan berhasil diperbarui menjadi selesai')),
-      );
-    }).catchError((error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal memperbarui status pesanan: $error')),
-      );
-    });
-  }
-
   Widget _buildOrderCard(Map<dynamic, dynamic> order) {
     final pemesanName = _userNames[order['pemesanId']] ?? 'Unknown';
     final tukangName = _userNames[order['tukangId']] ?? 'Unknown';
@@ -101,20 +90,20 @@ class _SedangDiprosesPageState extends State<SedangDiprosesPage> {
             _buildInfoRow('Status', order['status'], color: Colors.blue),
             _buildInfoRow('Nama Pemesan', pemesanName),
             _buildInfoRow('Tukang yang Dipilih', tukangName),
-            _buildInfoRow('Total Luas', order['totalLuas']),
-            _buildInfoRow('Estimasi Pengerjaan', order['estimasi']),
-            _buildInfoRow('Konfirmasi Tukang', order['konfirmasiTukang']),
-            _buildInfoRow('Pekerjaan', order['pekerjaan']),
-            _buildInfoRow('Status Pembayaran', order['statusPayment'] ?? 'Belum dibayar'),
-            _buildInfoRow('Tanggal Mulai Pengerjaan', order['tanggalMulai']),
-            _buildInfoRow('Total Biaya Kebutuhan', order['totalKebutuhan']),
             SizedBox(height: 16),
             Center(
               child: ElevatedButton(
-                onPressed: () => _updateOrderStatus(order['id']),
-                child: Text('Selesai', style: TextStyle(color: Colors.white)),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DetilSedangDiprosesPage(order: order),
+                    ),
+                  );
+                },
+                child: Text('Lihat Detail', style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
+                  backgroundColor: Colors.blue,
                   padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                 ),
               ),
