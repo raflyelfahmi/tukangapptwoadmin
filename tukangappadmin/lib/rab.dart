@@ -1,5 +1,6 @@
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 class RabPage extends StatefulWidget {
   final Map<dynamic, dynamic> order;
@@ -16,22 +17,25 @@ class _RabPageState extends State<RabPage> {
   final TextEditingController _pekerjaanController = TextEditingController();
   final TextEditingController _kebutuhanController = TextEditingController();
   final TextEditingController _tanggalMulaiController = TextEditingController();
-  final TextEditingController _estimasiController = TextEditingController();
+  final TextEditingController _tanggalBerakhirController = TextEditingController();
+  final TextEditingController _jumlahTukangController = TextEditingController(); // Tambahkan controller untuk jumlah tukang
 
   void _submitRab() {
     final String luas = _luasController.text;
     final String pekerjaan = _pekerjaanController.text;
     final String kebutuhan = _kebutuhanController.text;
     final String tanggalMulai = _tanggalMulaiController.text;
-    final String estimasi = _estimasiController.text;
+    final String tanggalBerakhir = _tanggalBerakhirController.text;
+    final String jumlahTukang = _jumlahTukangController.text; // Ambil nilai dari controller jumlah tukang
 
-    if (luas.isNotEmpty && pekerjaan.isNotEmpty && kebutuhan.isNotEmpty && tanggalMulai.isNotEmpty && estimasi.isNotEmpty) {
+    if (luas.isNotEmpty && pekerjaan.isNotEmpty && kebutuhan.isNotEmpty && tanggalMulai.isNotEmpty && tanggalBerakhir.isNotEmpty && jumlahTukang.isNotEmpty) {
       _ordersReference.child(widget.order['id']).update({
         'totalLuas': luas,
         'pekerjaan': pekerjaan,
         'totalKebutuhan': kebutuhan,
         'tanggalMulai': tanggalMulai,
-        'estimasi': estimasi,
+        'tanggalBerakhir': tanggalBerakhir,
+        'jumlahTukang': jumlahTukang, // Simpan jumlah tukang di database
         'status': 'menunggu',
       }).then((_) {
         print('RAB updated for order ${widget.order['id']}');
@@ -41,6 +45,20 @@ class _RabPageState extends State<RabPage> {
       });
     } else {
       print('Please fill in all fields');
+    }
+  }
+
+  Future<void> _selectDate(BuildContext context, TextEditingController controller) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(), // Tidak bisa memilih tanggal yang sudah lewat
+      lastDate: DateTime(2101),
+    );
+    if (picked != null) {
+      setState(() {
+        controller.text = DateFormat('dd-MM-yyyy').format(picked);
+      });
     }
   }
 
@@ -138,16 +156,29 @@ class _RabPageState extends State<RabPage> {
             TextField(
               controller: _tanggalMulaiController,
               decoration: InputDecoration(
-                labelText: 'Tanggal Mulai Pengerjaan',
+                labelText: 'Tanggal Mulai Pekerjaan',
                 border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.calendar_today),
               ),
-              keyboardType: TextInputType.datetime,
+              readOnly: true,
+              onTap: () => _selectDate(context, _tanggalMulaiController),
             ),
             SizedBox(height: 16),
             TextField(
-              controller: _estimasiController,
+              controller: _tanggalBerakhirController,
               decoration: InputDecoration(
-                labelText: 'Estimasi Pengerjaan (hari)',
+                labelText: 'Tanggal Berakhir Pekerjaan',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.calendar_today),
+              ),
+              readOnly: true,
+              onTap: () => _selectDate(context, _tanggalBerakhirController),
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: _jumlahTukangController, // Tambahkan TextField untuk jumlah tukang
+              decoration: InputDecoration(
+                labelText: 'Jumlah Tukang yang Dibutuhkan',
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.number,

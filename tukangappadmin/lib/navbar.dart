@@ -34,24 +34,24 @@ class Sidebar extends StatelessWidget {
               );
             },
           ),
-          ListTile(
-            title: Text('Pesanan Sedang Diproses'),
-            onTap: () {
-              Navigator.pushNamed(context, '/sedangdiproses');
-            },
-          ),
-          ListTile(
-            title: Text('Pesanan Ditolak'),
-            onTap: () {
-              Navigator.pushNamed(context, '/pesananditolak');
-            },
-          ),
-          ListTile(
-            title: Text('Riwayat Pesanan'),
-            onTap: () {
-              Navigator.pushNamed(context, '/riwayat');
-            },
-          ),
+          // ListTile(
+          //   title: Text('Pesanan Sedang Diproses'),
+          //   onTap: () {
+          //     Navigator.pushNamed(context, '/sedangdiproses');
+          //   },
+          // ),
+          // ListTile(
+          //   title: Text('Pesanan Ditolak'),
+          //   onTap: () {
+          //     Navigator.pushNamed(context, '/pesananditolak');
+          //   },
+          // ),
+          // ListTile(
+          //   title: Text('Riwayat Pesanan'),
+          //   onTap: () {
+          //     Navigator.pushNamed(context, '/riwayat');
+          //   },
+          // ),
         ],
       ),
     );

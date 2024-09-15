@@ -1,6 +1,12 @@
-import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/material.dart';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'detildatapesanan.dart'; // Import halaman detail pesanan
 import 'navbar.dart';
 import 'rab.dart';
 
@@ -10,9 +16,12 @@ class PesananPage extends StatefulWidget {
 }
 
 class _PesananPageState extends State<PesananPage> {
-  final DatabaseReference _ordersReference = FirebaseDatabase.instance.ref().child('orders');
-  final DatabaseReference _usersReference = FirebaseDatabase.instance.ref().child('users');
+  final DatabaseReference _ordersReference =
+      FirebaseDatabase.instance.ref().child('orders');
+  final DatabaseReference _usersReference =
+      FirebaseDatabase.instance.ref().child('users');
   List<Map<dynamic, dynamic>> _orderList = [];
+  Map<String, String> _userNames = {};
 
   @override
   void initState() {
@@ -21,17 +30,18 @@ class _PesananPageState extends State<PesananPage> {
   }
 
   void _fetchOrders() {
-    _ordersReference.onValue.listen((event) {
+    _ordersReference.onValue.listen((event) async {
       List<Map<dynamic, dynamic>> tempList = [];
       final snapshot = event.snapshot;
       if (snapshot.value != null) {
         Map<dynamic, dynamic> orders = snapshot.value as Map<dynamic, dynamic>;
-        orders.forEach((key, value) {
-          if (['pending', 'approved', 'menunggu'].contains(value['status'])) {
-            value['id'] = key;
-            tempList.add(value);
-          }
-        });
+        for (var key in orders.keys) {
+          var value = orders[key];
+          value['id'] = key;
+          value['pemesanName'] = await _getUserName(value['pemesanId']);
+          value['tukangName'] = await _getUserName(value['tukangId']);
+          tempList.add(value);
+        }
       }
       setState(() {
         _orderList = tempList;
@@ -43,11 +53,16 @@ class _PesananPageState extends State<PesananPage> {
   }
 
   Future<String> _getUserName(String userId) async {
+    if (_userNames.containsKey(userId)) {
+      return _userNames[userId]!;
+    }
     final snapshot = await _usersReference.child(userId).once();
     if (snapshot.snapshot.value != null) {
-      return (snapshot.snapshot.value as Map)['name'] ?? 'Unknown';
+      final name = (snapshot.snapshot.value as Map)['name'] ?? '-';
+      _userNames[userId] = name;
+      return name;
     }
-    return 'Unknown';
+    return '-';
   }
 
   void _updateOrderStatus(String orderId, String status) {
@@ -72,64 +87,267 @@ class _PesananPageState extends State<PesananPage> {
     );
   }
 
-  Widget _buildOrderCard(Map<dynamic, dynamic> order) {
-    final isApproved = order['status'] == 'approved';
-    final isWaiting = order['status'] == 'menunggu';
+  Future<void> _showTukangList(String orderId) async {
+    final orderSnapshot = await _ordersReference.child(orderId).get();
+    final orderData = orderSnapshot.value as Map<dynamic, dynamic>;
+    final int requiredTeamCount = int.parse(orderData['jumlahTukang']);
 
-    return Card(
-      elevation: 4,
-      margin: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Alamat: ${order['alamat']}',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    final snapshot =
+        await _usersReference.orderByChild('role').equalTo('tukang').once();
+    final tukangList = (snapshot.snapshot.value as Map<dynamic, dynamic>)
+        .values
+        .where((tukang) => int.parse(tukang['teamCount']?.toString() ?? '0') >= requiredTeamCount)
+        .toList();
+
+    if (tukangList.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('Pilih Tukang'),
+            content: Text('Tidak ada tukang dengan jumlah yang sesuai'),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    } else {
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('Pilih Tukang'),
+            content: Container(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: tukangList.length,
+                itemBuilder: (BuildContext context, int index) {
+                  final tukang = tukangList[index];
+                  return ListTile(
+                    title: Text(tukang['name']),
+                    subtitle: Text('Team Count: ${tukang['teamCount'] ?? '-'}'),
+                    onTap: () {
+                      _updateTukang(orderId, tukang['id']);
+                      Navigator.of(context).pop();
+                    },
+                  );
+                },
+              ),
             ),
-            SizedBox(height: 8),
-            Text('Tanggal: ${order['tanggal']}'),
-            Text('Status: ${order['status']}',
-                style: TextStyle(
-                  color: isApproved
-                      ? Colors.green
-                      : isWaiting
-                          ? Colors.orange
-                          : Colors.blue,
-                  fontWeight: FontWeight.bold,
-                )),
-            SizedBox(height: 8),
-            FutureBuilder(
-              future: _getUserName(order['pemesanId']),
-              builder: (context, snapshot) {
-                return Text(
-                  'Nama Pemesan: ${snapshot.connectionState == ConnectionState.waiting ? 'Loading...' : snapshot.data}',
-                  style: TextStyle(fontStyle: FontStyle.italic),
-                );
+          );
+        },
+      );
+    }
+  }
+
+  void _updateTukang(String orderId, String tukangId) {
+    _ordersReference.child(orderId).update({
+      'tukangId': tukangId,
+      'konfirmasiTukang': 'pending',
+      'alasanPenolakan': null,
+    }).then((_) {
+      print('Order $orderId tukang updated to $tukangId');
+      setState(() {
+        _fetchOrders();
+      });
+    }).catchError((error) {
+      print('Error updating tukang: $error');
+    });
+  }
+
+  Future<void> _uploadFileRincian(String orderId) async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles();
+
+    if (result != null) {
+      PlatformFile file = result.files.first;
+      String fileName = file.name;
+      String filePath = 'rincian_files/$orderId/$fileName';
+
+      try {
+        // Upload file to Firebase Storage
+        if (file.bytes != null) {
+          await FirebaseStorage.instance.ref(filePath).putData(file.bytes!);
+        } else if (file.path != null) {
+          await FirebaseStorage.instance
+              .ref(filePath)
+              .putFile(File(file.path!));
+        } else {
+          throw Exception('File path and bytes are both null');
+        }
+
+        // Get the download URL
+        String downloadURL =
+            await FirebaseStorage.instance.ref(filePath).getDownloadURL();
+
+        // Save the download URL to Realtime Database
+        await _ordersReference
+            .child(orderId)
+            .child('rincianFiles')
+            .push()
+            .set(downloadURL);
+
+        print('File uploaded and URL saved to database');
+      } catch (e) {
+        print('Error uploading file: $e');
+      }
+    } else {
+      // User canceled the picker
+      print('File picker canceled');
+    }
+  }
+
+  void _navigateToDetailPesanan(Map<dynamic, dynamic> order) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DetailDataPesanan(order: order),
+      ),
+    );
+  }
+
+  void _showTransferTukangDialog(String orderId) {
+    final TextEditingController nominalController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Transfer Tukang'),
+          content: TextField(
+            controller: nominalController,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(labelText: 'Masukkan Nominal'),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Tutup dialog
               },
+              child: Text('Batal'),
             ),
-            FutureBuilder(
-              future: _getUserName(order['tukangId']),
-              builder: (context, snapshot) {
-                return Text(
-                  'Tukang yang Dipilih: ${snapshot.connectionState == ConnectionState.waiting ? 'Loading...' : snapshot.data}',
-                  style: TextStyle(fontStyle: FontStyle.italic),
-                );
+            TextButton(
+              onPressed: () {
+                _transferTukang(orderId, nominalController.text);
+                Navigator.of(context).pop(); // Tutup dialog
               },
+              child: Text('Kirim'),
             ),
-            SizedBox(height: 16),
-            if (!isWaiting)
+          ],
+        );
+      },
+    );
+  }
+
+  void _transferTukang(String orderId, String nominal) {
+    _ordersReference.child(orderId).update({
+      'transferTukang': nominal,
+      'tukangPayment': 'lunas',
+    }).then((_) {
+      print('Order $orderId updated with transferTukang: $nominal and tukangPayment: lunas');
+      setState(() {
+        _fetchOrders();
+      });
+    }).catchError((error) {
+      print('Error updating order: $error');
+    });
+  }
+
+  Widget _buildOrderTable() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columnSpacing: 20, // Persempit jarak antar kolom
+        columns: const [
+          DataColumn(label: Text('Pemesan')),
+          DataColumn(label: Text('Tukang')),
+          DataColumn(label: Text('Alamat')),
+          DataColumn(label: Text('Tanggal')),
+          DataColumn(label: Text('Status')),
+          DataColumn(label: Text('Pekerjaan')),
+          DataColumn(label: Text('Total Kebutuhan')),
+          DataColumn(label: Text('Status Payment')),
+          DataColumn(label: Text('Status Pekerjaan')),
+          DataColumn(label: Text('Bukti Images')),
+          DataColumn(label: Text('File Rincian')),
+          DataColumn(label: Text('Aksi')),
+        ],
+        rows: _orderList.map((order) {
+          final isApproved = order['status'] == 'approved';
+          final isPending = order['status'] == 'pending';
+          final isSelesai = order['statusPekerjaan'] == 'selesai';
+          final isOrderSelesai = order['status'] == 'selesai';
+          final isMenungguDitolak = order['status'] == 'menunggu' ||
+              order['konfirmasiTukang'] == 'ditolak';
+          final isTukangPaymentLunas = order['tukangPayment'] == 'lunas';
+          return DataRow(cells: [
+            DataCell(Text(order['pemesanName'] ?? '-')),
+            DataCell(Text(order['tukangName'] ?? '-')),
+            DataCell(Text(order['alamat'] ?? '-')),
+            DataCell(Text(order['tanggal'] ?? '-')),
+            DataCell(Text(order['status'] ?? '-')),
+            DataCell(Text(order['pekerjaan'] ?? '-')),
+            DataCell(Text(order['totalKebutuhan']?.toString() ?? '-')),
+            DataCell(Text(order['statusPayment'] ?? '-')),
+            DataCell(Text(order['statusPekerjaan'] ?? '-')),
+            DataCell(
+              InkWell(
+                onTap: () async {
+                  final urls =
+                      (order['buktiImages'] as Map<dynamic, dynamic>?)?.values;
+                  if (urls != null) {
+                    for (var url in urls) {
+                      if (await canLaunch(url)) {
+                        await launch(url);
+                      } else {
+                        print('Could not launch $url');
+                      }
+                    }
+                  }
+                },
+                child: Text('Lihat Progress',
+                    style: TextStyle(color: Colors.blue)),
+              ),
+            ),
+            DataCell(
+              InkWell(
+                onTap: () async {
+                  final urls =
+                      (order['rincianFiles'] as Map<dynamic, dynamic>?)?.values;
+                  if (urls != null) {
+                    for (var url in urls) {
+                      if (await canLaunch(url)) {
+                        await launch(url);
+                      } else {
+                        print('Could not launch $url');
+                      }
+                    }
+                  }
+                },
+                child:
+                    Text('Lihat Rincian', style: TextStyle(color: Colors.blue)),
+              ),
+            ),
+            DataCell(
               Row(
-                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   ElevatedButton(
-                    onPressed: isApproved ? null : () => _updateOrderStatus(order['id'], 'approved'),
+                    onPressed: isPending
+                        ? () => _updateOrderStatus(order['id'], 'approved')
+                        : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isApproved ? Colors.grey : Colors.blue,
-                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      backgroundColor: isPending ? Colors.blue : Colors.grey,
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     ),
-                    child: Text(isApproved ? 'Approved' : 'Approve', style: TextStyle(color: Colors.white)),
+                    child: Text(isPending ? 'Approve' : 'Approved',
+                        style: TextStyle(color: Colors.white)),
                   ),
                   SizedBox(width: 8),
                   if (isApproved)
@@ -137,14 +355,76 @@ class _PesananPageState extends State<PesananPage> {
                       onPressed: () => _navigateToRabPage(order),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
-                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       ),
-                      child: Text('Proses', style: TextStyle(color: Colors.white)),
+                      child:
+                          Text('Proses', style: TextStyle(color: Colors.white)),
+                    ),
+                  SizedBox(width: 8),
+                  if (isSelesai && !isOrderSelesai)
+                    ElevatedButton(
+                      onPressed: () =>
+                          _updateOrderStatus(order['id'], 'selesai'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      ),
+                      child: Text('Selesai',
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                  SizedBox(width: 8),
+                  if (isMenungguDitolak)
+                    ElevatedButton(
+                      onPressed: () => _showTukangList(order['id']),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      ),
+                      child: Text('Ubah Tukang',
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                  SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => _uploadFileRincian(order['id']),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                    child: Text('Upload File Rincian',
+                        style: TextStyle(color: Colors.white)),
+                  ),
+                  SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => _navigateToDetailPesanan(order),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                    child: Text('Detail Pesanan',
+                        style: TextStyle(color: Colors.white)),
+                  ),
+                  SizedBox(width: 8),
+                  if (isOrderSelesai && !isTukangPaymentLunas)
+                    ElevatedButton(
+                      onPressed: () => _showTransferTukangDialog(order['id']),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.purple,
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      ),
+                      child: Text('Transfer Tukang',
+                          style: TextStyle(color: Colors.white)),
                     ),
                 ],
               ),
-          ],
-        ),
+            ),
+          ]);
+        }).toList(),
       ),
     );
   }
@@ -175,12 +455,7 @@ class _PesananPageState extends State<PesananPage> {
                 style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic),
               ),
             )
-          : ListView.builder(
-              itemCount: _orderList.length,
-              itemBuilder: (context, index) {
-                return _buildOrderCard(_orderList[index]);
-              },
-            ),
+          : _buildOrderTable(),
     );
   }
 }
